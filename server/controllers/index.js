@@ -100,6 +100,17 @@ const hostPage3 = (req, res) => {
   res.render('page3');
 };
 
+// Function to render the untemplated page3.
+const hostPage4 = async (req, res) => {
+  try {
+    const docs = await Dog.find({}).lean().exec();
+    return res.render('page4', { dogs: docs });
+  } catch (err) {
+    console.log(err);
+    return res.status(500).json({ error: 'failed to find dogs' });
+  }
+};
+
 // Get name will return the name of the last added cat.
 const getName = async (req, res) => {
   try {
@@ -182,6 +193,58 @@ const setName = async (req, res) => {
     */
     console.log(err);
     return res.status(500).json({ error: 'failed to create cat' });
+  }
+};
+
+// Function to create a new dog in the database
+const setDogName = async (req, res) => {
+  if (!req.body.name || !req.body.age || !req.body.breed) {
+    // If they are missing data, send back an error.
+    return res.status(400).json({ error: 'Name, age, and breeds are all required' });
+  }
+
+  const dogData = {
+    name: req.body.name,
+    breed: req.body.breed,
+    age: req.body.age,
+  };
+
+  /* Once we have our cat object set up. We want to turn it into something the database
+     can understand. To do this, we create a new instance of a Cat using the Cat model
+     exported from the Models folder.
+
+     Note that this does NOT store the cat in the database. That is the next step.
+  */
+  const newDog = new Dog(dogData);
+
+  /* We have now setup a cat in the right format. We now want to store it in the database.
+     Again, because the database and node server are separate things entirely we have no
+     way of being sure the database will work or respond. Because of that, we wrap our code
+     in a try/catch.
+  */
+  try {
+    /* newCat is a version of our catData that is database-friendly. If you print it, you will
+       see it has extra information attached to it other than name and bedsOwned. One thing it
+       now has is a .save() function. This function will intelligently add or update the cat in
+       the database. Since we have never saved this cat before, .save() will create a new cat in
+       the database. All calls to the database are async, including .save() so we will await the
+       databases response. If something goes wrong, we will end up in our catch() statement. If
+       not, we will return a 201 to the user with the cat info.
+    */
+    await newDog.save();
+    return res.status(201).json({
+      name: newDog.name,
+      breed: newDog.breed,
+      age: newDog.age,
+    });
+  } catch (err) {
+    /* If something goes wrong while communicating with the database, log the error and send
+       an error message back to the client. Note that our return will return us from the setName
+       function, not just the catch statement. That means we can treat the code below the catch
+       as being our "if the try worked"
+    */
+    console.log(err);
+    return res.status(500).json({ error: 'failed to create dog' });
   }
 };
 
@@ -276,23 +339,47 @@ const updateLast = (req, res) => {
   });
 };
 
-const updateAge = (req, res) => {
-  const updatePromise = Dog.findOneAndUpdate({}, { $inc: { age: 1 } }, {
+const updateAge = async (req, res) => {
+  console.log(`req name: ${req.body.name}`);
+
+  if (!req.body.name) {
+    return res.status(400).json({ error: 'Name is required to perform a search' });
+  }
+
+  let doc;
+  try {
+    doc = await Dog.findOne({ name: req.body.name }).exec();
+  } catch (err) {
+    console.log(err);
+    return res.status(500).json({ error: 'Something went wrong' });
+  }
+
+  // If we do not find something that matches our search, doc will be empty.
+  if (!doc) {
+    return res.status(404).json({ error: 'No dog with that name found' });
+  }
+
+  // Otherwise, we got a result and will send it back to the user.
+  // return res.json({ name: doc.name, beds: doc.bedsOwned });
+
+  const { name } = req.body;
+
+  const updatePromise = Dog.findOneAndUpdate({ name }, { $inc: { age: 1 } }, {
     returnDocument: 'after', // Populates doc in the .then() with the version after update
     sort: { createdDate: 'descending' },
   }).lean().exec();
 
-  // If we successfully save/update them in the database, send back the cat's info.
-  updatePromise.then((doc) => res.json({
+  updatePromise.then(() => res.json({
     name: doc.name,
-    age: doc.age,
+    age: doc.age + 1,
   }));
 
-  // If something goes wrong saving to the database, log the error and send a message to the client.
   updatePromise.catch((err) => {
     console.log(err);
     return res.status(500).json({ error: 'Something went wrong' });
   });
+
+  return res.status(200);
 };
 
 // A function to send back the 404 page.
@@ -308,8 +395,10 @@ module.exports = {
   page1: hostPage1,
   page2: hostPage2,
   page3: hostPage3,
+  page4: hostPage4,
   getName,
   setName,
+  setDogName,
   updateLast,
   updateAge,
   searchName,
